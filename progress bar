@@ -1,0 +1,30 @@
+$source = "C:\Source"
+$dest   = "D:\Destination"
+
+# Get total size
+$totalSize = (Get-ChildItem $source -Recurse -File | Measure-Object -Property Length -Sum).Sum
+
+# Start robocopy in background
+$job = Start-Job {
+    robocopy $using:source $using:dest /E /NFL /NDL /NJH /NJS /NC /NS
+}
+
+while ($job.State -eq "Running") {
+    $copiedSize = (Get-ChildItem $dest -Recurse -File -ErrorAction SilentlyContinue |
+                   Measure-Object -Property Length -Sum).Sum
+
+    if ($totalSize -gt 0) {
+        $percent = [math]::Round(($copiedSize / $totalSize) * 100, 2)
+    } else {
+        $percent = 0
+    }
+
+    Write-Progress -Activity "Copying Files..." `
+                   -Status "$percent% Complete" `
+                   -PercentComplete $percent
+
+    Start-Sleep -Seconds 2
+}
+
+Write-Progress -Activity "Copying Files..." -Completed
+Receive-Job $job
