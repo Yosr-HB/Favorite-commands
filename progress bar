@@ -1,30 +1,32 @@
 $source = "C:\Source"
-$dest   = "D:\Destination"
+$dest   = "D:\Dest"
 
-# Get total size
-$totalSize = (Get-ChildItem $source -Recurse -File | Measure-Object -Property Length -Sum).Sum
+$process = Start-Process robocopy `
+    -ArgumentList "`"$source`" `"$dest`" /E /ETA" `
+    -NoNewWindow `
+    -RedirectStandardOutput "robolog.txt" `
+    -PassThru
 
-# Start robocopy in background
-$job = Start-Job {
-    robocopy $using:source $using:dest /E /NFL /NDL /NJH /NJS /NC /NS
-}
+while (-not $process.HasExited) {
+    Start-Sleep -Milliseconds 500
 
-while ($job.State -eq "Running") {
-    $copiedSize = (Get-ChildItem $dest -Recurse -File -ErrorAction SilentlyContinue |
-                   Measure-Object -Property Length -Sum).Sum
+    if (Test-Path "robolog.txt") {
+        $lastLine = Get-Content "robolog.txt" -Tail 5 |
+                    Where-Object { $_ -match '\s+(\d+)%' } |
+                    Select-Object -Last 1
 
-    if ($totalSize -gt 0) {
-        $percent = [math]::Round(($copiedSize / $totalSize) * 100, 2)
-    } else {
-        $percent = 0
+        if ($lastLine -match '\s+(\d+)%') {
+            $percent = [int]$matches[1]
+
+            $barLength = 20
+            $filled = [math]::Floor(($percent / 100) * $barLength)
+            $empty  = $barLength - $filled
+
+            $bar = ("█" * $filled) + ("░" * $empty)
+
+            Write-Host -NoNewline "`r$bar $percent%"
+        }
     }
-
-    Write-Progress -Activity "Copying Files..." `
-                   -Status "$percent% Complete" `
-                   -PercentComplete $percent
-
-    Start-Sleep -Seconds 2
 }
 
-Write-Progress -Activity "Copying Files..." -Completed
-Receive-Job $job
+Write-Host "`nDone."
